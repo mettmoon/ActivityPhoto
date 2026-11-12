@@ -1,6 +1,17 @@
 import AppKit
+import CoreLocation
 import GeoshopCore
 import Photos
+
+enum LibraryApplyError: LocalizedError {
+    case missing(count: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .missing(let count): "보관함에서 찾을 수 없는 사진이 \(count)장 있습니다. 목록에서 제거한 뒤 다시 시도하세요."
+        }
+    }
+}
 
 /// 사진 앱 보관함 접근 (PhotoKit). 편집(촬영일·위치 변경)까지 하려면 읽기·쓰기 전체 권한이 필요하다.
 @MainActor
@@ -57,6 +68,36 @@ final class PhotoLibraryService {
             }
         }
         return result
+    }
+
+    /// 보관함 사진의 촬영일·위치를 바꾼다 (기획서 §4.4.1). 원본 파일은 건드리지 않는다.
+    /// 사진 앱의 확인 요청이 한 번만 뜨도록 한 번의 변경 묶음으로 처리한다. 묶음 전체가 성공하거나 실패한다.
+    func apply(_ changes: [(identifier: String, assignment: Assignment)]) async throws {
+        let assets = assets(for: changes.map(\.identifier))
+        let missing = changes.filter { assets[$0.identifier] == nil }
+        if !missing.isEmpty {
+            throw LibraryApplyError.missing(count: missing.count)
+        }
+        let requests = changes.map { change in
+            (asset: assets[change.identifier]!, location: Self.location(for: change.assignment), date: change.assignment.date)
+        }
+        try await PHPhotoLibrary.shared().performChanges {
+            for request in requests {
+                let change = PHAssetChangeRequest(for: request.asset)
+                change.creationDate = request.date
+                change.location = request.location
+            }
+        }
+    }
+
+    private static func location(for assignment: Assignment) -> CLLocation {
+        CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: assignment.latitude, longitude: assignment.longitude),
+            altitude: assignment.altitude ?? 0,
+            horizontalAccuracy: 5,
+            verticalAccuracy: assignment.altitude == nil ? -1 : 5,   // 음수 = 고도 없음
+            timestamp: assignment.date
+        )
     }
 
     func thumbnail(for identifier: String, pixelSize: CGFloat) async -> NSImage? {

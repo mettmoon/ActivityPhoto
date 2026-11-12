@@ -15,6 +15,7 @@ struct ProjectDetailView: View {
     @State private var workspace: TrackWorkspace?
     @State private var loadError: String?
     @State private var notice: Notice?
+    @State private var applyTargets: [PhotoRef]?
     @AppStorage("showsInspector") private var showsInspector = true
 
     /// GPX 구성이 바뀌면 타임라인을 다시 만든다.
@@ -54,11 +55,33 @@ struct ProjectDetailView: View {
                 .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                let count = pendingTargets.count
+                Button {
+                    applyTargets = pendingTargets
+                } label: {
+                    Label("일괄 적용 (\(count))", systemImage: "square.and.arrow.down.on.square")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(count == 0)
+                .help("할당한 시각·위치를 사진에 반영합니다.")
+            }
             ToolbarItem {
                 Button("프로젝트 정보", systemImage: "sidebar.trailing") { showsInspector.toggle() }
             }
         }
+        .sheet(isPresented: Binding(get: { applyTargets != nil }, set: { if !$0 { applyTargets = nil } })) {
+            ApplySheet(project: project, targets: applyTargets ?? []) {
+                catalog.refresh(project: project, store: store)
+            }
+        }
         .task(id: trackSignature) { load() }
+    }
+
+    /// 적용 대상: 대기·실패 (할당 불가 제외).
+    private var pendingTargets: [PhotoRef] {
+        store?.applyTargets(in: project) { catalog.status(of: $0).isBlocked } ?? []
     }
 
     private func load() {

@@ -21,6 +21,23 @@ enum DemoData {
         guard let project = try? await store.createProject(name: "데모: 북한산 1박 2일", sourceKind: .files, gpxURLs: [day1, day2])
         else { return }
         seedPhotos(store: store, project: project, directory: directory.appending(path: "Photos", directoryHint: .isDirectory))
+
+        // `-GeoshopDemoAutoApply`: 샌드박스 안에서 파일 쓰기 경로를 확인하고 결과를 출력한 뒤 종료.
+        if ProcessInfo.processInfo.arguments.contains("-GeoshopDemoAutoApply") {
+            let targets = store.applyTargets(in: project)
+            let result = await store.applyToFiles(targets, timeZone: project.timeZone)
+            for photo in targets {
+                let info = store.resolveFileURL(for: photo).flatMap { url -> ImageFileInfo? in
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    return ImageFiles.readInfo(at: url)
+                }
+                print("[demo-apply] \(photo.fileName) applied=\(photo.appliedAssignment == photo.assignment) error=\(photo.lastError ?? "-") "
+                      + "exif=\(info?.captureLocalText ?? "-") \(info?.captureOffset ?? "-") gps=\(info?.latitude ?? .nan),\(info?.longitude ?? .nan)")
+            }
+            print("[demo-apply] succeeded=\(result.succeeded) failed=\(result.failures.count)")
+            NSApp.terminate(nil)
+        }
     }
 
     /// 상태별 사진: 미할당(기존 정보 있음/없음), 대기, 적용됨, 미지원 형식(GIF), 찾을 수 없음(추가 후 삭제).
