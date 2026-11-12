@@ -20,6 +20,8 @@ struct ProjectInspector: View {
         Form {
             Section("프로젝트") {
                 TextField("이름", text: $project.name)
+                    .onSubmit(fixEmptyName)
+                    .onDisappear(perform: fixEmptyName)
                 LabeledContent("사진 소스") {
                     Label(project.sourceKind.title, systemImage: project.sourceKind.systemImage)
                 }
@@ -137,6 +139,13 @@ struct ProjectInspector: View {
         Task {
             defer { isResolvingTimeZone = false }
             do { try await store.resetTimeZoneToAutomatic(for: project) } catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    /// 이름을 지운 채 두면 목록에서 빈 줄이 되므로 기본 이름을 넣는다.
+    private func fixEmptyName() {
+        if project.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            project.name = "이름 없는 프로젝트"
         }
     }
 

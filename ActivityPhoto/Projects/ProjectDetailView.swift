@@ -76,7 +76,7 @@ struct ProjectDetailView: View {
                 catalog.refresh(project: project, store: store)
             }
         }
-        .task(id: trackSignature) { load() }
+        .task(id: trackSignature) { await load() }
     }
 
     /// 적용 대상: 대기·실패 (할당 불가 제외).
@@ -84,17 +84,32 @@ struct ProjectDetailView: View {
         store?.applyTargets(in: project) { catalog.status(of: $0).isBlocked } ?? []
     }
 
-    private func load() {
+    /// GPX를 백그라운드에서 읽어 타임라인을 만든다 (큰 파일도 화면이 멈추지 않게).
+    private func load() async {
         guard let store else { return }
+        let tracks = project.sortedTracks
+        let urls = tracks.map { store.fileURL(for: $0) }
+        let colors = tracks.map(\.colorIndex)
+        let names = tracks.map(\.displayName)
         do {
-            let timeline = try store.timeline(for: project)
-            let tracks = project.sortedTracks
-            workspace = TrackWorkspace(timeline: timeline, documentColors: tracks.map(\.colorIndex), documentNames: tracks.map(\.displayName))
+            let timeline = try await Task.detached(priority: .userInitiated) {
+                TrackTimeline(documents: try urls.map { try GPXParser.parse(contentsOf: $0) })
+            }.value
+            guard !Task.isCancelled else { return }
+            workspace = TrackWorkspace(timeline: timeline, documentColors: colors, documentNames: names)
             loadError = nil
         } catch {
             workspace = nil
-            loadError = error.localizedDescription
+            loadError = Self.message(for: error)
         }
+    }
+
+    private static func message(for error: Error) -> String {
+        if let parse = error as? GPXParseError { return parse.message }
+        if let cocoa = error as? CocoaError, cocoa.code == .fileReadNoSuchFile {
+            return "앱에 복사해 둔 GPX 파일이 없습니다. 프로젝트 정보에서 GPX를 다시 추가해 주세요."
+        }
+        return error.localizedDescription
     }
 
     // MARK: - 할당

@@ -219,8 +219,15 @@ struct ApplySheet: View {
     }
 
     private static func reason(for error: Error) -> String {
-        if let photos = error as? PHPhotosError, photos.code == .userCancelled {
-            return "사진 앱에서 변경을 허용하지 않았습니다."
+        if let photos = error as? PHPhotosError {
+            switch photos.code {
+            case .userCancelled: return "사진 앱에서 변경을 허용하지 않았습니다."
+            case .accessUserDenied, .accessRestricted: return "사진 보관함 접근 권한이 없습니다. 시스템 설정 ▸ 개인정보 보호 및 보안 ▸ 사진에서 허용해 주세요."
+            case .identifierNotFound: return "보관함에서 사진을 찾을 수 없습니다."
+            case .networkAccessRequired, .networkError: return "iCloud 사진을 받으려면 네트워크 연결이 필요합니다."
+            case .libraryVolumeOffline: return "사진 보관함이 있는 디스크가 연결되어 있지 않습니다."
+            default: break
+            }
         }
         return error.localizedDescription
     }
