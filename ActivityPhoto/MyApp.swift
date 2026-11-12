@@ -7,6 +7,18 @@ import SwiftUI
     private let store: ProjectStore
 
     init() {
+        #if DEBUG
+        if DemoData.isEnabled {
+            container = try! GeoshopSchema.makeContainer(inMemory: true)
+            store = ProjectStore(
+                context: container.mainContext,
+                trackDirectory: FileManager.default.temporaryDirectory.appending(path: "GeoshopDemoTracks")
+            )
+            let store = store
+            Task { await DemoData.seed(store) }
+            return
+        }
+        #endif
         do {
             container = try GeoshopSchema.makeContainer()
         } catch {

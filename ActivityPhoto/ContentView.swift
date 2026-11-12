@@ -72,6 +72,9 @@ struct ContentView: View {
         .onAppear {
             if selection == nil { selection = projects.first?.id }
         }
+        .onChange(of: projects.first?.id) { _, first in
+            if selection == nil { selection = first }
+        }
     }
 }
 

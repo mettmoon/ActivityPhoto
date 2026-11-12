@@ -1,182 +1,95 @@
 import GeoshopCore
 import SwiftUI
-import UniformTypeIdentifiers
 
-/// 프로젝트 정보·GPX 관리. 지도·고도표(M3)와 사진(M4)은 이후 마일스톤에서 붙인다.
+/// 프로젝트 작업 화면: 위 지도 + 아래 고도표, 오른쪽 인스펙터(프로젝트 정보·GPX).
+/// 사진 그리드(M4)는 이후 지도 왼쪽에 붙는다.
 struct ProjectDetailView: View {
     @Bindable var project: Project
 
     @Environment(\.projectStore) private var store
-    @State private var isImporting = false
-    @State private var isAdding = false
-    @State private var isPickingTimeZone = false
-    @State private var isResolvingTimeZone = false
-    @State private var warnings: [TrackImportWarning] = []
-    @State private var errorMessage: String?
+    @State private var workspace: TrackWorkspace?
+    @State private var loadError: String?
+    @AppStorage("showsInspector") private var showsInspector = true
 
-    private var referenceDate: Date { project.startTime ?? .now }
+    /// GPX 구성이 바뀌면 타임라인을 다시 만든다.
+    private var trackSignature: [UUID] {
+        project.sortedTracks.map(\.id)
+    }
 
     var body: some View {
-        Form {
-            Section("프로젝트") {
-                TextField("이름", text: $project.name)
-                LabeledContent("사진 소스") {
-                    Label(project.sourceKind.title, systemImage: project.sourceKind.systemImage)
+        Group {
+            if let workspace {
+                VSplitView {
+                    TrackMapView(workspace: workspace, timeZone: project.timeZone)
+                        .frame(minHeight: 240, idealHeight: 420)
+                    ElevationChartView(workspace: workspace, timeZone: project.timeZone)
+                        .frame(minHeight: 160, idealHeight: 220)
                 }
-                if let start = project.startTime, let end = project.endTime {
-                    LabeledContent("기간") {
-                        Text("\(start.formatted(in: project.timeZone)) – \(end.formatted(in: project.timeZone))")
-                    }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    PinnedLocationBar(workspace: workspace, timeZone: project.timeZone)
                 }
-            }
-
-            Section {
-                LabeledContent("시간대") {
-                    HStack {
-                        if isResolvingTimeZone { ProgressView().controlSize(.small) }
-                        Text(project.timeZone.label(at: referenceDate))
-                        Text(project.timeZoneIsAuto ? "자동" : "직접 지정")
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(.quaternary, in: Capsule())
-                    }
-                }
-                if project.timeZoneNeedsReview {
-                    Label("GPX 위치로 시간대를 확인하지 못해 이 Mac의 시간대를 쓰고 있습니다. 확인해 주세요.",
-                          systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                }
-                HStack {
-                    Button("시간대 변경…") { isPickingTimeZone = true }
-                    Button("GPX 위치로 다시 판별") { resolveTimeZone() }
-                        .disabled(isResolvingTimeZone)
-                }
-            } header: {
-                Text("시간대")
-            } footer: {
-                Text("파일 소스는 촬영일시를 이 시간대의 현지 시각으로 기록합니다. 보관함 소스는 표시에만 씁니다.")
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                ForEach(project.sortedTracks) { track in
-                    TrackRow(track: track, timeZone: project.timeZone)
-                        .contextMenu {
-                            Button("GPX 제거", role: .destructive) { remove(track) }
-                                .disabled(project.tracks.count <= 1)
-                        }
-                }
-                HStack {
-                    Button("GPX 추가…") { isImporting = true }
-                        .disabled(isAdding)
-                    if isAdding { ProgressView().controlSize(.small) }
-                }
-            } header: {
-                Text("GPX (\(project.tracks.count))")
-            } footer: {
-                Text("마지막 GPX는 제거할 수 없습니다. 제거하려면 우클릭하세요.")
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                ContentUnavailableView(
-                    "지도·고도표와 사진은 준비 중",
-                    systemImage: "map",
-                    description: Text("다음 단계(M3·M4)에서 추가됩니다.")
-                )
+            } else if let loadError {
+                ContentUnavailableView("GPX를 불러올 수 없습니다", systemImage: "exclamationmark.triangle", description: Text(loadError))
+            } else {
+                ProgressView()
             }
         }
-        .formStyle(.grouped)
         .navigationTitle(project.name)
-        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.gpx], allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls): add(urls)
-            case .failure(let error): errorMessage = error.localizedDescription
+        .inspector(isPresented: $showsInspector) {
+            ProjectInspector(project: project)
+                .inspectorColumnWidth(min: 280, ideal: 320, max: 420)
+        }
+        .toolbar {
+            ToolbarItem {
+                Button("프로젝트 정보", systemImage: "sidebar.trailing") { showsInspector.toggle() }
             }
         }
-        .sheet(isPresented: $isPickingTimeZone) {
-            TimeZonePickerSheet(current: project.timeZone, referenceDate: referenceDate) { zone in
-                perform { try store?.setTimeZone(zone, for: project) }
-            }
-        }
-        .alert("다른 시간대의 GPX", isPresented: Binding(get: { !warnings.isEmpty }, set: { if !$0 { warnings = [] } })) {
-            Button("확인") {}
-        } message: {
-            Text(warningMessage)
-        }
-        .alert("오류", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("확인") {}
-        } message: {
-            Text(errorMessage ?? "")
-        }
+        .task(id: trackSignature) { load() }
     }
 
-    private var warningMessage: String {
-        let lines = warnings.map { warning -> String in
-            switch warning {
-            case .differentTimeZone(let name, let zone):
-                "‘\(name)’: \(zone.label(at: referenceDate))"
-            }
-        }
-        return lines.joined(separator: "\n")
-            + "\n\n프로젝트 시간대(\(project.timeZone.identifier))와 다릅니다. 파일 소스라면 촬영일시가 프로젝트 시간대로 기록됩니다. 별도 프로젝트로 나누는 것을 권장합니다."
-    }
-
-    private func add(_ urls: [URL]) {
+    private func load() {
         guard let store else { return }
-        isAdding = true
-        Task {
-            defer { isAdding = false }
-            do {
-                warnings = try await store.addTracks(urls, to: project)
-            } catch {
-                errorMessage = error.localizedDescription
+        do {
+            let timeline = try store.timeline(for: project)
+            let workspace = TrackWorkspace(timeline: timeline, documentColors: project.sortedTracks.map(\.colorIndex))
+            #if DEBUG
+            if DemoData.isEnabled {
+                workspace.pin(timeline.location(atDistance: timeline.totalDistance * DemoData.pinnedFraction))
             }
+            #endif
+            self.workspace = workspace
+            loadError = nil
+        } catch {
+            workspace = nil
+            loadError = error.localizedDescription
         }
-    }
-
-    private func remove(_ track: TrackFile) {
-        perform { try store?.removeTrack(track, from: project) }
-    }
-
-    private func resolveTimeZone() {
-        guard let store else { return }
-        isResolvingTimeZone = true
-        Task {
-            defer { isResolvingTimeZone = false }
-            do { try await store.resetTimeZoneToAutomatic(for: project) } catch { errorMessage = error.localizedDescription }
-        }
-    }
-
-    private func perform(_ action: () throws -> Void) {
-        do { try action() } catch { errorMessage = error.localizedDescription }
     }
 }
 
-private struct TrackRow: View {
-    let track: TrackFile
+/// 클릭으로 고정한 지점 표시줄. M5에서 이 지점이 사진 할당 대상이 된다.
+private struct PinnedLocationBar: View {
+    let workspace: TrackWorkspace
     let timeZone: TimeZone
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Circle()
-                .fill(TrackPalette.color(track.colorIndex))
-                .frame(width: 10, height: 10)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track.displayName)
-                Text("\(track.startTime.formatted(in: timeZone)) – \(track.endTime.formatted(in: timeZone))")
-                    .font(.caption)
+        HStack(spacing: 12) {
+            Image(systemName: "mappin.circle.fill")
+                .foregroundStyle(workspace.pinned == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
+            if let pinned = workspace.pinned {
+                LocationSummaryView(location: pinned, timeZone: timeZone, showsCoordinate: true)
+                Spacer()
+                Button("선택 해제") { workspace.pin(nil) }
+                    .keyboardShortcut(.escape, modifiers: [])
+            } else {
+                Text("지도나 고도표를 클릭해 지점을 선택하세요.")
                     .foregroundStyle(.secondary)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(formatDistance(track.distance)).monospacedDigit()
-                Text("포인트 \(track.pointCount.formatted())")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Spacer()
             }
         }
-        .help(track.originalFileName)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(minHeight: 44)
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
     }
 }
