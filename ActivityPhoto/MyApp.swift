@@ -1,9 +1,26 @@
+import GeoshopCore
+import SwiftData
 import SwiftUI
 
 @main struct MyApp: App {
+    private let container: ModelContainer
+    private let store: ProjectStore
+
+    init() {
+        do {
+            container = try GeoshopSchema.makeContainer()
+        } catch {
+            fatalError("프로젝트 저장소를 열 수 없습니다: \(error)")
+        }
+        store = ProjectStore(context: container.mainContext, trackDirectory: ProjectStore.defaultTrackDirectory)
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .frame(minWidth: 900, minHeight: 560)
+                .environment(\.projectStore, store)
         }
+        .modelContainer(container)
     }
 }
