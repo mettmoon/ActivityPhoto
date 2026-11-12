@@ -8,6 +8,8 @@ import UniformTypeIdentifiers
 struct PhotoGridView: View {
     @Bindable var project: Project
     @Bindable var catalog: PhotoCatalog
+    /// 할당 해제 (실행 취소 등록은 상위 화면이 맡는다).
+    var onUnassign: ([PhotoRef]) -> Void
 
     @Environment(\.projectStore) private var store
     @State private var isImportingFiles = false
@@ -16,6 +18,7 @@ struct PhotoGridView: View {
     @State private var notice: String?
     @State private var errorMessage: String?
     @State private var libraryStatus = PhotoLibraryService.shared.authorizationStatus
+    @FocusState private var isGridFocused: Bool
 
     private let columns = [GridItem(.adaptive(minimum: 116, maximum: 160), spacing: 8)]
 
@@ -40,6 +43,7 @@ struct PhotoGridView: View {
                         )
                         .onTapGesture {
                             catalog.click(photo, in: photos, modifiers: NSEvent.modifierFlags)
+                            isGridFocused = true
                         }
                         .contextMenu { contextMenu(for: photo) }
                     }
@@ -48,7 +52,17 @@ struct PhotoGridView: View {
             }
             .background(Color(nsColor: .controlBackgroundColor))
             .contentShape(Rectangle())
-            .onTapGesture { catalog.clearSelection() }
+            .onTapGesture {
+                catalog.clearSelection()
+                isGridFocused = true
+            }
+            // 키보드 (§4.3): Delete = 할당 해제, ⌘A = 모두 선택, Esc = 선택 해제
+            .focusable()
+            .focused($isGridFocused)
+            .focusEffectDisabled()
+            .onDeleteCommand { onUnassign(catalog.selectedPhotos(in: project)) }
+            .onCommand(#selector(NSText.selectAll(_:))) { catalog.selectAll(photos) }
+            .onExitCommand { catalog.clearSelection() }
             .overlay { emptyState(visibleCount: photos.count) }
             .dropDestination(for: URL.self) { urls, _ in
                 guard project.sourceKind == .files else { return false }
@@ -183,6 +197,9 @@ struct PhotoGridView: View {
     @ViewBuilder
     private func contextMenu(for photo: PhotoRef) -> some View {
         let targets = catalog.selection.contains(photo.id) ? catalog.selectedPhotos(in: project) : [photo]
+        if targets.contains(where: { $0.assignment != nil }) {
+            Button(targets.count > 1 ? "할당 해제 (\(targets.count)장)" : "할당 해제") { onUnassign(targets) }
+        }
         if project.sourceKind == .files && catalog.status(of: photo) == .missing {
             Button("다시 연결…") { relinkTarget = photo }
         }

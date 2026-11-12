@@ -7,6 +7,8 @@ import SwiftUI
 struct ElevationChartView: View {
     @Bindable var workspace: TrackWorkspace
     let timeZone: TimeZone
+    let markers: [AssignmentMarker]
+    var onSelectLocation: (TrackLocation) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -29,6 +31,8 @@ struct ElevationChartView: View {
                 ProfileChart(
                     workspace: workspace,
                     timeZone: timeZone,
+                    markers: markers,
+                    onSelectLocation: onSelectLocation,
                     xLabel: "거리",
                     x: { $0.distance },
                     locationX: { $0.distance },
@@ -42,6 +46,8 @@ struct ElevationChartView: View {
                 ProfileChart(
                     workspace: workspace,
                     timeZone: timeZone,
+                    markers: markers,
+                    onSelectLocation: onSelectLocation,
                     xLabel: "시각",
                     x: { $0.date },
                     locationX: { $0.date },
@@ -58,6 +64,8 @@ struct ElevationChartView: View {
 private struct ProfileChart<X: Plottable & Comparable>: View {
     let workspace: TrackWorkspace
     let timeZone: TimeZone
+    let markers: [AssignmentMarker]
+    var onSelectLocation: (TrackLocation) -> Void
     let xLabel: String
     let x: (ProfileSample) -> X
     let locationX: (TrackLocation) -> X
@@ -94,10 +102,26 @@ private struct ProfileChart<X: Plottable & Comparable>: View {
                 }
             }
 
-            if let pinned = workspace.pinned {
-                RuleMark(x: .value(xLabel, locationX(pinned)))
-                    .foregroundStyle(.red)
-                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+            // 할당 지점 (§5). 고도가 없으면 위쪽 가장자리에.
+            ForEach(markers) { marker in
+                if let location = marker.location {
+                    let color: Color = marker.isSelected ? .accentColor : (marker.isPending ? .orange : .green)
+                    if marker.isSelected {
+                        RuleMark(x: .value(xLabel, locationX(location)))
+                            .foregroundStyle(Color.accentColor.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5))
+                    }
+                    PointMark(
+                        x: .value(xLabel, locationX(location)),
+                        y: .value("고도", min(location.elevation ?? yDomain.upperBound, yDomain.upperBound))
+                    )
+                    .symbol {
+                        Image(systemName: "camera.circle.fill")
+                            .font(.system(size: marker.isSelected ? 18 : 14))
+                            .foregroundStyle(.white, color)
+                            .shadow(radius: 1)
+                    }
+                }
             }
 
             if let hovered = workspace.hovered {
@@ -150,7 +174,9 @@ private struct ProfileChart<X: Plottable & Comparable>: View {
                         }
                     }
                     .onTapGesture { point in
-                        workspace.pin(location(at: point, proxy: proxy, geometry: geometry))
+                        if let location = location(at: point, proxy: proxy, geometry: geometry) {
+                            onSelectLocation(location)
+                        }
                     }
             }
         }

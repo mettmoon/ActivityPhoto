@@ -32,26 +32,29 @@ final class TrackWorkspace {
     let elevationRange: ClosedRange<Double>?
     /// 세그먼트 → 트랙 색 인덱스.
     private let segmentColors: [Int]
+    /// 세그먼트 → 트랙(GPX) 이름.
+    private let segmentNames: [String]
 
     private(set) var hovered: TrackLocation?
     private(set) var hoverSource: Source?
-    /// 클릭으로 고정한 지점. M5에서 사진 할당 대상이 된다.
-    var pinned: TrackLocation?
     var axis: ProfileAxis = .distance
 
-    /// - Parameter documentColors: `timeline`을 만들 때 넘긴 GPX 순서대로의 색 인덱스.
-    init(timeline: TrackTimeline, documentColors: [Int]) {
+    /// - Parameters:
+    ///   - documentColors: `timeline`을 만들 때 넘긴 GPX 순서대로의 색 인덱스.
+    ///   - documentNames: 같은 순서의 GPX 표시 이름.
+    init(timeline: TrackTimeline, documentColors: [Int], documentNames: [String]) {
         self.timeline = timeline
         profile = timeline.elevationProfile()
         elevationRange = timeline.elevationRange
-        segmentColors = timeline.segments.map { segment in
-            documentColors.indices.contains(segment.documentIndex) ? documentColors[segment.documentIndex] : 0
+        segmentColors = timeline.segments.map { documentColors.indices.contains($0.documentIndex) ? documentColors[$0.documentIndex] : 0 }
+        segmentNames = timeline.segments.map { segment in
+            documentNames.indices.contains(segment.documentIndex) ? documentNames[segment.documentIndex] : (segment.trackName ?? "트랙")
         }
+        let colors = segmentColors
         mapPaths = timeline.segments.indices.map { index in
             MapPath(
                 segmentIndex: index,
-                colorIndex: documentColors.indices.contains(timeline.segments[index].documentIndex)
-                    ? documentColors[timeline.segments[index].documentIndex] : 0,
+                colorIndex: colors[index],
                 coordinates: timeline.displayPath(segmentIndex: index).map(\.coordinate)
             )
         }
@@ -59,6 +62,10 @@ final class TrackWorkspace {
 
     func colorIndex(forSegment index: Int) -> Int {
         segmentColors.indices.contains(index) ? segmentColors[index] : 0
+    }
+
+    func trackName(forSegment index: Int) -> String {
+        segmentNames.indices.contains(index) ? segmentNames[index] : "트랙"
     }
 
     func hover(_ location: TrackLocation?, from source: Source) {
@@ -73,10 +80,37 @@ final class TrackWorkspace {
             hoverSource = nil
         }
     }
+}
 
-    /// 클릭: 지금 호버 중인 지점을 고정한다. 트랙 밖이면 고정 해제.
-    func pin(_ location: TrackLocation?) {
-        pinned = location
+/// 지도·고도표에 그리는 할당 지점. 같은 값을 할당받은 사진들을 하나로 묶는다.
+struct AssignmentMarker: Identifiable {
+    let assignment: Assignment
+    /// 타임라인 위 지점 (고도표 위치용). 할당 후 GPX를 지웠다면 nil.
+    let location: TrackLocation?
+    let photoIDs: [UUID]
+    let isSelected: Bool
+    /// 아직 적용 전인 사진이 하나라도 있음.
+    let isPending: Bool
+
+    var id: Assignment { assignment }
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: assignment.latitude, longitude: assignment.longitude)
+    }
+
+    static func build(photos: [PhotoRef], selection: Set<UUID>, timeline: TrackTimeline) -> [AssignmentMarker] {
+        let groups = Dictionary(grouping: photos.filter { $0.assignment != nil }) { $0.assignment! }
+        return groups.map { assignment, photos in
+            AssignmentMarker(
+                assignment: assignment,
+                location: timeline.location(at: assignment.date),
+                photoIDs: photos.map(\.id),
+                isSelected: photos.contains { selection.contains($0.id) },
+                isPending: photos.contains { $0.appliedAssignment != assignment }
+            )
+        }
+        // 선택된 것을 위에 그린다.
+        .sorted { ($0.isSelected ? 1 : 0, $0.assignment.date) < ($1.isSelected ? 1 : 0, $1.assignment.date) }
     }
 }
 
