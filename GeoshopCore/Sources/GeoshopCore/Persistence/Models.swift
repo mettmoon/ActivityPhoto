@@ -25,6 +25,9 @@ public final class Project {
     @Relationship(deleteRule: .cascade, inverse: \TrackFile.project)
     public var tracks: [TrackFile] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \PhotoRef.project)
+    public var photos: [PhotoRef] = []
+
     public init(
         id: UUID = UUID(),
         name: String,
@@ -102,7 +105,7 @@ public final class TrackFile {
 }
 
 public enum GeoshopSchema {
-    public static let models: [any PersistentModel.Type] = [Project.self, TrackFile.self]
+    public static let models: [any PersistentModel.Type] = [Project.self, TrackFile.self, PhotoRef.self]
 
     /// 디스크(또는 `inMemory`) 저장소를 연다. `url`이 nil이면 SwiftData 기본 위치.
     public static func makeContainer(url: URL? = nil, inMemory: Bool = false) throws -> ModelContainer {

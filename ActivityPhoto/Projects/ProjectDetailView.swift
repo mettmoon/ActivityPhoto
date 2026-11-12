@@ -1,12 +1,13 @@
 import GeoshopCore
 import SwiftUI
 
-/// 프로젝트 작업 화면: 위 지도 + 아래 고도표, 오른쪽 인스펙터(프로젝트 정보·GPX).
-/// 사진 그리드(M4)는 이후 지도 왼쪽에 붙는다.
+/// 프로젝트 작업 화면 (기획서 §5): 왼쪽 사진 그리드, 오른쪽 위 지도 + 아래 고도표,
+/// 맨 오른쪽 인스펙터(프로젝트 정보·GPX).
 struct ProjectDetailView: View {
     @Bindable var project: Project
 
     @Environment(\.projectStore) private var store
+    @State private var catalog = PhotoCatalog()
     @State private var workspace: TrackWorkspace?
     @State private var loadError: String?
     @AppStorage("showsInspector") private var showsInspector = true
@@ -17,22 +18,27 @@ struct ProjectDetailView: View {
     }
 
     var body: some View {
-        Group {
-            if let workspace {
-                VSplitView {
-                    TrackMapView(workspace: workspace, timeZone: project.timeZone)
-                        .frame(minHeight: 240, idealHeight: 420)
-                    ElevationChartView(workspace: workspace, timeZone: project.timeZone)
-                        .frame(minHeight: 160, idealHeight: 220)
+        HSplitView {
+            PhotoGridView(project: project, catalog: catalog)
+                .frame(minWidth: 260, idealWidth: 380, maxWidth: 700)
+            Group {
+                if let workspace {
+                    VSplitView {
+                        TrackMapView(workspace: workspace, timeZone: project.timeZone)
+                            .frame(minHeight: 240, idealHeight: 420)
+                        ElevationChartView(workspace: workspace, timeZone: project.timeZone)
+                            .frame(minHeight: 160, idealHeight: 220)
+                    }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        PinnedLocationBar(workspace: workspace, timeZone: project.timeZone)
+                    }
+                } else if let loadError {
+                    ContentUnavailableView("GPX를 불러올 수 없습니다", systemImage: "exclamationmark.triangle", description: Text(loadError))
+                } else {
+                    ProgressView()
                 }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    PinnedLocationBar(workspace: workspace, timeZone: project.timeZone)
-                }
-            } else if let loadError {
-                ContentUnavailableView("GPX를 불러올 수 없습니다", systemImage: "exclamationmark.triangle", description: Text(loadError))
-            } else {
-                ProgressView()
             }
+            .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle(project.name)
         .inspector(isPresented: $showsInspector) {

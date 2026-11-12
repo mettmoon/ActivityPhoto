@@ -30,7 +30,7 @@ import SwiftUI
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .frame(minWidth: 900, minHeight: 560)
+                .frame(minWidth: 1100, minHeight: 600)
                 .environment(\.projectStore, store)
         }
         .modelContainer(container)

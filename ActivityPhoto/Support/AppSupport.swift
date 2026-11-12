@@ -57,6 +57,19 @@ extension TrackImportError: @retroactive LocalizedError {
     }
 }
 
+extension PhotoImportError: @retroactive LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .wrongSource:
+            "이 프로젝트의 사진 소스와 다른 종류의 사진입니다."
+        case .unreadable(let fileName):
+            "‘\(fileName)’ 이미지를 읽을 수 없습니다."
+        case .duplicate(let fileName):
+            "‘\(fileName)’ 파일은 이미 프로젝트에 있습니다."
+        }
+    }
+}
+
 extension GPXParseError {
     var message: String {
         switch self {

@@ -26,6 +26,9 @@ public final class ProjectStore {
     public let trackDirectory: URL
     private let timeZoneResolver: any TimeZoneResolving
     private let fallbackTimeZone: TimeZone
+    /// 사진 파일 북마크 옵션. 샌드박스 앱은 보안 범위 북마크(app-scope)를 쓴다.
+    public var bookmarkCreationOptions: URL.BookmarkCreationOptions = [.withSecurityScope]
+    public var bookmarkResolutionOptions: URL.BookmarkResolutionOptions = [.withSecurityScope, .withoutUI]
 
     public init(
         context: ModelContext,
@@ -237,7 +240,8 @@ public final class ProjectStore {
         trackDirectory.appending(path: storedFileName, directoryHint: .notDirectory)
     }
 
-    private func save() throws {
+    /// 컨텍스트에 바뀐 내용이 있으면 저장한다.
+    public func save() throws {
         if context.hasChanges { try context.save() }
     }
 }
